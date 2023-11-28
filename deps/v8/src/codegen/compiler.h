@@ -191,7 +191,8 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       const ScriptDetails& script_details,
       ScriptCompiler::CompileOptions compile_options,
       ScriptCompiler::NoCacheReason no_cache_reason,
-      NativesFlag is_natives_code);
+      NativesFlag is_natives_code,
+      ScriptCompiler::CompilationDetails* compilation_details);
 
   // Create a shared function info object for a String source.
   static MaybeHandle<SharedFunctionInfo>
@@ -199,7 +200,8 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       Isolate* isolate, Handle<String> source,
       const ScriptDetails& script_details, v8::Extension* extension,
       ScriptCompiler::CompileOptions compile_options,
-      NativesFlag is_natives_code);
+      NativesFlag is_natives_code,
+      ScriptCompiler::CompilationDetails* compilation_details);
 
   // Create a shared function info object for a String source and serialized
   // cached data. The cached data may be rejected, in which case this function
@@ -210,7 +212,8 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       const ScriptDetails& script_details, AlignedCachedData* cached_data,
       ScriptCompiler::CompileOptions compile_options,
       ScriptCompiler::NoCacheReason no_cache_reason,
-      NativesFlag is_natives_code);
+      NativesFlag is_natives_code,
+      ScriptCompiler::CompilationDetails* compilation_details);
 
   // Create a shared function info object for a String source and a task that
   // has deserialized cached data on a background thread. The cached data from
@@ -223,7 +226,8 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       BackgroundDeserializeTask* deserialize_task,
       ScriptCompiler::CompileOptions compile_options,
       ScriptCompiler::NoCacheReason no_cache_reason,
-      NativesFlag is_natives_code);
+      NativesFlag is_natives_code,
+      ScriptCompiler::CompilationDetails* compilation_details);
 
   static MaybeHandle<SharedFunctionInfo>
   GetSharedFunctionInfoForScriptWithCompileHints(
@@ -233,7 +237,8 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
       void* compile_hint_callback_data,
       ScriptCompiler::CompileOptions compile_options,
       ScriptCompiler::NoCacheReason no_cache_reason,
-      NativesFlag is_natives_code);
+      NativesFlag is_natives_code,
+      ScriptCompiler::CompilationDetails* compilation_details);
 
   // Create a shared function info object for a Script source that has already
   // been parsed and possibly compiled on a background thread while being loaded
@@ -242,7 +247,8 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
   // owned by the caller.
   static MaybeHandle<SharedFunctionInfo> GetSharedFunctionInfoForStreamedScript(
       Isolate* isolate, Handle<String> source,
-      const ScriptDetails& script_details, ScriptStreamingData* streaming_data);
+      const ScriptDetails& script_details, ScriptStreamingData* streaming_data,
+      ScriptCompiler::CompilationDetails* compilation_details);
 
   // Create a shared function info object for the given function literal
   // node (the code may be lazily compiled).
@@ -398,11 +404,6 @@ class OptimizedCompilationJob : public CompilationJob {
   // Finalizes the compile job. Must be called on the main thread.
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT Status FinalizeJob(Isolate* isolate);
 
-  // Registers weak object to optimized code dependencies.
-  void RegisterWeakObjectsInOptimizedCode(Isolate* isolate,
-                                          Handle<NativeContext> context,
-                                          Handle<Code> code);
-
   const char* compiler_name() const { return compiler_name_; }
 
   double prepare_in_ms() const {
@@ -425,6 +426,14 @@ class OptimizedCompilationJob : public CompilationJob {
   virtual Status ExecuteJobImpl(RuntimeCallStats* stats,
                                 LocalIsolate* local_heap) = 0;
   virtual Status FinalizeJobImpl(Isolate* isolate) = 0;
+
+  // Register weak object to optimized code dependencies.
+  GlobalHandleVector<Map> CollectRetainedMaps(Isolate* isolate,
+                                              Handle<Code> code);
+  void RegisterWeakObjectsInOptimizedCode(Isolate* isolate,
+                                          Handle<NativeContext> context,
+                                          Handle<Code> code,
+                                          GlobalHandleVector<Map> maps);
 
   base::TimeDelta time_taken_to_prepare_;
   base::TimeDelta time_taken_to_execute_;

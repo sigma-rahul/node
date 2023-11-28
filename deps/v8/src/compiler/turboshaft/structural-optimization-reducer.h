@@ -9,6 +9,7 @@
 
 #include "src/compiler/turboshaft/assembler.h"
 #include "src/compiler/turboshaft/index.h"
+#include "src/compiler/turboshaft/opmasks.h"
 #include "src/zone/zone.h"
 
 // The StructuralOptimizationReducer reducer is suitable for changing the
@@ -96,17 +97,17 @@ class StructuralOptimizationReducer : public Next {
 
     Block* current_if_false;
     const BranchOp* current_branch = &branch;
-    BranchHint default_hint = BranchHint::kNone;
+    BranchHint next_hint = BranchHint::kNone;
 
     OpIndex switch_var = OpIndex::Invalid();
     while (true) {
       // If we encounter a condition that is not equality, we can't turn it
       // into a switch case.
-      const EqualOp* equal = Asm()
-                                 .input_graph()
-                                 .Get(current_branch->condition())
-                                 .template TryCast<EqualOp>();
-      if (!equal || equal->rep != RegisterRepresentation::Word32()) {
+      const ComparisonOp* equal = Asm()
+                                      .input_graph()
+                                      .Get(current_branch->condition())
+                                      .template TryCast<Opmask::kWord32Equal>();
+      if (!equal) {
         TRACE(
             "\t [bailout] Branch with different condition than Word32 "
             "Equal.\n");
@@ -142,10 +143,46 @@ class StructuralOptimizationReducer : public Next {
       current_if_false = current_branch->if_false;
       DCHECK(current_if_true && current_if_false);
 
+      // We can't just use `current_branch->hint` for every case. Consider:
+      //
+      //     if (a) { }
+      //     else if (b) { }
+      //     else if (likely(c)) { }
+      //     else if (d) { }
+      //     else { }
+      //
+      // The fact that `c` is Likely doesn't tell anything about the likelyness
+      // of `a` and `b` compared to `c`, which means that `c` shouldn't have the
+      // Likely hint in the switch. However, since `c` is likely here, it means
+      // that `d` and "default" are both unlikely, even in the switch.
+      //
+      // So, for the 1st case, we use `current_branch->hint`.
+      // Then, when we encounter a Likely hint, we mark all of the subsequent
+      // cases are Unlikely, but don't mark the current one as Likely. This is
+      // done with the `next_hint` variable, which is initially kNone, but
+      // because kFalse when we encounter a Likely branch.
+      // We never set `next_hint` as kTrue as it would only apply to subsequent
+      // cases and not to already-emitted cases. The only case that could thus
+      // have a kTrue annotation is the 1st one.
+      DCHECK_NE(next_hint, BranchHint::kTrue);
+      BranchHint hint = next_hint;
+      if (cases.size() == 0) {
+        // The 1st case gets its original hint.
+        hint = current_branch->hint;
+      } else if (current_branch->hint == BranchHint::kFalse) {
+        // For other cases, if the branch has a kFalse hint, we do use it,
+        // regardless of `next_hint`.
+        hint = BranchHint::kNone;
+      }
+      if (current_branch->hint == BranchHint::kTrue) {
+        // This branch is likely true, which means that all subsequent cases are
+        // unlikely.
+        next_hint = BranchHint::kFalse;
+      }
+
       // The current_if_true block becomes the corresponding switch case block.
       uint32_t value = const_op.word32();
-      cases.emplace_back(value, current_if_true->MapToNextGraph(),
-                         current_branch->hint);
+      cases.emplace_back(value, Asm().MapToNewGraph(current_if_true), hint);
 
       // All pure ops from the if_false block should be executed before
       // the switch, except the last Branch operation (which we drop).
@@ -159,8 +196,6 @@ class StructuralOptimizationReducer : public Next {
         TRACE("\t [break] Reached end of the if-else cascade.\n");
         break;
       }
-
-      default_hint = current_branch->hint;
 
       // Iterate to the next if_false block in the cascade.
       current_branch = &maybe_branch.template Cast<BranchOp>();
@@ -194,7 +229,7 @@ class StructuralOptimizationReducer : public Next {
     Asm().Switch(
         Asm().MapToNewGraph(switch_var),
         Asm().output_graph().graph_zone()->CloneVector(base::VectorOf(cases)),
-        default_block->MapToNextGraph(), default_hint);
+        Asm().MapToNewGraph(default_block), next_hint);
     return OpIndex::Invalid();
   }
 

@@ -35,9 +35,10 @@ static MaybeHandle<SharedFunctionInfo> GetFunctionInfo(Isolate* isolate,
   ScriptDetails script_details(isolate->factory()->empty_string(),
                                ScriptOriginOptions(true, true));
   script_details.repl_mode = repl_mode;
+  ScriptCompiler::CompilationDetails compilation_details;
   return Compiler::GetSharedFunctionInfoForScript(
       isolate, source, script_details, ScriptCompiler::kNoCompileOptions,
-      ScriptCompiler::kNoCacheNoReason, NOT_NATIVES_CODE);
+      ScriptCompiler::kNoCacheNoReason, NOT_NATIVES_CODE, &compilation_details);
 }
 }  // namespace
 
@@ -322,13 +323,13 @@ bool DebugEvaluate::IsSideEffectFreeIntrinsic(Runtime::FunctionId id) {
   V(ToString)                            \
   /* Type checks */                      \
   V(IsArray)                             \
-  V(IsFunction)                          \
   V(IsJSProxy)                           \
   V(IsJSReceiver)                        \
   V(IsRegExp)                            \
   V(IsSmi)                               \
   /* Loads */                            \
   V(LoadLookupSlotForCall)               \
+  V(GetPrivateMember)                    \
   V(GetProperty)                         \
   /* Arrays */                           \
   V(ArraySpeciesConstructor)             \
@@ -1072,7 +1073,7 @@ DebugInfo::SideEffectState DebugEvaluate::FunctionGetSideEffectState(
     return requires_runtime_checks ? DebugInfo::kRequiresRuntimeChecks
                                    : DebugInfo::kHasNoSideEffect;
   } else if (info->IsApiFunction()) {
-    Code code = info->GetCode(isolate);
+    Tagged<Code> code = info->GetCode(isolate);
     if (code->is_builtin()) {
       return code->builtin_id() == Builtin::kHandleApiCallOrConstruct
                  ? DebugInfo::kHasNoSideEffect
@@ -1242,14 +1243,14 @@ void DebugEvaluate::VerifyTransitiveBuiltins(Isolate* isolate) {
   for (Builtin caller = Builtins::kFirst; caller <= Builtins::kLast; ++caller) {
     DebugInfo::SideEffectState state = BuiltinGetSideEffectState(caller);
     if (state != DebugInfo::kHasNoSideEffect) continue;
-    Code code = isolate->builtins()->code(caller);
+    Tagged<Code> code = isolate->builtins()->code(caller);
     int mode = RelocInfo::ModeMask(RelocInfo::CODE_TARGET) |
                RelocInfo::ModeMask(RelocInfo::RELATIVE_CODE_TARGET);
 
     for (RelocIterator it(code, mode); !it.done(); it.next()) {
       RelocInfo* rinfo = it.rinfo();
       DCHECK(RelocInfo::IsCodeTargetMode(rinfo->rmode()));
-      Code lookup_result =
+      Tagged<Code> lookup_result =
           isolate->heap()->FindCodeForInnerPointer(rinfo->target_address());
       Builtin callee = lookup_result->builtin_id();
       if (BuiltinGetSideEffectState(callee) == DebugInfo::kHasNoSideEffect) {
