@@ -29,7 +29,7 @@ This a list of all the dependencies:
 * [postject 1.0.0-alpha.6][]
 * [simdjson 3.6.0][]
 * [simdutf 4.0.8][]
-* [undici 5.28.0][]
+* [undici 5.28.1][]
 * [uvwasi 0.0.19][]
 * [V8 11.8.172.12][]
 * [zlib 1.2.13.1-motley-5daffc7][]
@@ -352,7 +352,7 @@ performance improvements not currently available in standard zlib.
 [postject 1.0.0-alpha.6]: #postject-100-alpha6
 [simdjson 3.6.0]: #simdutf-360
 [simdutf 4.0.8]: #simdutf-408
-[undici 5.28.0]: #undici-5280
+[undici 5.28.1]: #undici-5281
 [update-openssl-action]: ../../../.github/workflows/update-openssl.yml
 [uvwasi 0.0.19]: #uvwasi-0019
 [v8 11.8.172.12]: #v8-11817212
